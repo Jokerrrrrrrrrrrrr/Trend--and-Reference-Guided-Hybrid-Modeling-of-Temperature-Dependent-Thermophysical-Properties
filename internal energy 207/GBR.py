@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import GradientBoostingRegressor  # 改为导入梯度提升
+from sklearn.metrics import mean_squared_error, r2_score
+
+# 1. 读取数据
+file_path = "internal energy 207.xlsx"
+df = pd.read_excel(file_path, sheet_name="Sheet6")
+
+# 2. 定义列索引
+group_cols = df.columns[13:32]   # 第14~25列，基团
+temp_cols = df.columns[32:42]    # 第26~35列，温度
+internal_energy_cols = df.columns[42:52]      # 第36~45列，内能
+
+# 3. 构建训练数据
+X_total, y_total, material_ids, temperatures = [], [], [], []
+
+for i, row in df.iterrows():
+    material_id = row.iloc[0]
+    Nk = row[group_cols].values
+    temps = row[temp_cols].values
+    ies = row[internal_energy_cols].values
+
+    for T, ien in zip(temps, ies):
+        if np.isnan(T) or np.isnan(ien):
+            continue
+        features = np.concatenate([Nk, [T]])
+        X_total.append(features)
+        y_total.append(ien)
+        material_ids.append(material_id)
+        temperatures.append(T)
+
+X_total = np.array(X_total)
+y_total = np.array(y_total)
+
+# 4. 拟合模型 - 改为梯度提升回归
+model = GradientBoostingRegressor(
+    n_estimators=200,
+    learning_rate=0.05,
+    max_depth=5,
+    min_samples_split=20,
+    min_samples_leaf=10,
+    random_state=42
+)
+model.fit(X_total, y_total)
+
+# 5. 评估模型
+y_pred = model.predict(X_total)
+r2 = r2_score(y_total, y_pred)
+mse = mean_squared_error(y_total, y_pred)
+ard = np.mean(np.abs((y_pred - y_total) / y_total)) * 100  # 平均相对偏差 (%)
+
+print("\n📊 梯度提升回归模型评估（基团 + 温度 特征）：")
+print(f"R²  = {r2:.4f}")
+print(f"MSE = {mse:.2f}")
+print(f"ARD = {ard:.2f}%")
+
+# 计算相对误差
+relative_error = np.abs((y_total - y_pred) / y_total) * 100
+
+# 计算不同相对误差的数量
+error_1_percent = np.sum(relative_error < 1)
+error_5_percent = np.sum(relative_error < 5)
+error_10_percent = np.sum(relative_error < 10)
+
+print(f"\n📊 统计结果：")
+print(f"数据点相对误差小于1%: {error_1_percent}个")
+print(f"数据点相对误差小于5%: {error_5_percent}个")
+print(f"数据点相对误差小于10%: {error_10_percent}个")
+
+# 6. 保存预测结果
+df_result = pd.DataFrame({
+    "Material_ID": material_ids,
+    "Temperature (K)": temperatures,
+    "Internal_energy_measured (J/mol)": y_total,
+    "Internal_energy_predicted (J/mol)": y_pred,
+    "Absolute Error": np.abs(y_total - y_pred),
+    "Relative Error (%)": relative_error
+})
+
+df_result.to_excel("Internal_energy预测结果_基团加温度_GBR.xlsx", index=False)
+print("✅ 已保存预测结果为: Internal_energy预测结果_基团加温度_GBR.xlsx")
